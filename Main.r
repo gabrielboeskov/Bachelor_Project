@@ -58,7 +58,7 @@ ggplot(data = df_in, aes(x = age, y = d18O)) +
 
 #Drift function
 f_drift <- function(x,params){
-  drift <- -params[1]+params[2]-params[3]
+  drift <- (params[1]+params[2]*x-params[3]*x^3)
   return(drift*x)
 }
 
@@ -143,8 +143,6 @@ lines(df_pro$age, df_pro$d18O, type = 'l', col=3)
 plot(df_pro$age, df_pro$d18O, type = 'l', col=1)
 
 
-
-
 calculate_transition_density <- function(x0, T_start, T_end, dt, params) {
 
   n_steps <- round((T_end - T_start) / dt)
@@ -153,30 +151,19 @@ calculate_transition_density <- function(x0, T_start, T_end, dt, params) {
   density[1] <- x0
   
   for (i in 1:n_steps) {
-    dW <- rnorm(1, mean = 0, sd = sqrt(dt))
-    density[i + 1] <- density[i] + f_drift(density[i], params) * dt + f_diff(params) * dW
+    density[i + 1] <- rnorm(1, mean = density[i] + f_drift(density[i], params) * dt, f_diff(params)*sqrt(dt)) 
   }
   return(density)
 }
 
-lines(calculate_transition_density(x0,T_start,T_end, dt, result), type='l')
-plot(density(calculate_transition_density(x0,T_start,T_end, dt, result)))
-res_1 = c()
-for (i in 1:100){
-  res <- calculate_transition_density(x0,T_start,T_end, dt, result)
-  res_1 <- c(res_1, res)
-}
-plot(density(res_1))
+plot(density(df_pro[,2]))
 
-qqnorm(res_1)
+transition_densities <- calculate_transition_density(x0,T_start,T_end,dt,result)
+plot(density(transition_densities))
+plot(transition_densities,type='l')
 
+lines(transition_densities, type='l', col=3)
 
-
-
-
-
-
-
-
+qqnorm(transition_densities)
 
 
