@@ -22,7 +22,7 @@ df_in <- read.csv("data/China_cave.csv",sep=",",skip = skip)
 
 # Renaming column names for ease of reference
 df <- rename(df, age = EDC3.Age..kyr., d18O =  GLT_syn.δ18O....)
-
+df_in <- rename(df_in, age = Age..ka.BP., d18O = δ18O.carb....VPDB.)
 # Data processing for duplicated data
 preprocess_data <- function(data) {
   
@@ -50,7 +50,10 @@ ggplot(data = df, aes(x = age, y = d18O)) +
   geom_line() +
   xlab("Time before present (yrs)") +
   ylab(expression(deltaˆ18 ~ O ~ (permil)))
-
+ggplot(data = df_in, aes(x = age, y = d18O)) +
+  geom_line() +
+  xlab("Time before present (yrs)") +
+  ylab(expression(deltaˆ18 ~ O ~ (permil)))
 
 
 #Drift function
@@ -137,19 +140,35 @@ plot(sim_res$t, sim_res$X, type = 'l', col = 1)
 
 lines(df_pro$age, df_pro$d18O, type = 'l', col=3)
 
+plot(df_pro$age, df_pro$d18O, type = 'l', col=1)
 
 
 
 
+calculate_transition_density <- function(x0, T_start, T_end, dt, params) {
 
+  n_steps <- round((T_end - T_start) / dt)
+  
+  density <- numeric(n_steps + 1)
+  density[1] <- x0
+  
+  for (i in 1:n_steps) {
+    dW <- rnorm(1, mean = 0, sd = sqrt(dt))
+    density[i + 1] <- density[i] + f_drift(density[i], params) * dt + f_diff(params) * dW
+  }
+  return(density)
+}
 
+lines(calculate_transition_density(x0,T_start,T_end, dt, result), type='l')
+plot(density(calculate_transition_density(x0,T_start,T_end, dt, result)))
+res_1 = c()
+for (i in 1:100){
+  res <- calculate_transition_density(x0,T_start,T_end, dt, result)
+  res_1 <- c(res_1, res)
+}
+plot(density(res_1))
 
-
-
-
-
-
-
+qqnorm(res_1)
 
 
 
