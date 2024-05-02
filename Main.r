@@ -23,6 +23,7 @@ df_in <- read.csv("data/China_cave.csv",sep=",",skip = skip)
 # Renaming column names for ease of reference
 df <- rename(df, age = EDC3.Age..kyr., d18O =  GLT_syn.δ18O....)
 df_in <- rename(df_in, age = Age..ka.BP., d18O = δ18O.carb....VPDB.)
+
 # Data processing for duplicated data
 preprocess_data <- function(data) {
   
@@ -58,13 +59,18 @@ ggplot(data = df_in, aes(x = age, y = d18O)) +
 
 #Drift function
 f_drift <- function(x,params){
-  drift <- (params[1]+params[2]*x-params[3]*x^3)
-  return(drift*x)
+  drift <- params[1]+params[2]*x+params[3]*x^3
+  return(drift)
 }
 
 f_diff <- function(params){
-  diff <- params[4]
+  diff <- params[5]
   return(diff)
+}
+
+f_jump <- function(params){
+  jump <- params[4]
+  return(jump)
 }
 
 dt <- 0.05
@@ -75,7 +81,6 @@ EM_nll <- function(par, X, dt) {
   # Initialize negative log likelihood
   nll <- 0
   
-  
   for (n in 1:N) {
     # Drift function
 
@@ -84,15 +89,21 @@ EM_nll <- function(par, X, dt) {
     # Diffusion matrix
     SigmaSigma <- f_diff(par)^2
     
+    lambda <- f_jump(par)
+    
     # Update negative log likelihood
-    nll <- nll + 0.5 * log(SigmaSigma * dt) +
+    nll <- nll + 0.5 * log(2*pi*SigmaSigma * dt) +
       0.5 * (X[n + 1] - X[n] - drift * dt) *
-      1/(SigmaSigma * dt) * (X[n + 1] - X[n] - drift * dt)
+      1/(SigmaSigma * dt) * (X[n + 1] - X[n] - drift * dt) + 
+      lambda*dt-(X[n+1]-X[n])*log(lambda*dt)
   }
   return(nll)
 }
 
-initial_vals <- c(5,5,5,5)
+# y-axis limits for plotting
+ylim <- c(-6, 6)
+
+initial_vals <- c(1,1,1,1,1)
 
 # initial parameter study
 "
@@ -107,6 +118,7 @@ for (i in range(0.00001,0.001,0.00001)){
 }
 "
 
+
 # Euler murayama scheme for optimising values, (0=convergence)
 result_EM_1 <- optim(par = initial_vals, fn = EM_nll,
                      X = df_pro[,2], dt = 0.05)
@@ -115,6 +127,8 @@ result <- result_EM_1$par
 
 result
 
+result_EM_1$convergence
+
 T_start <- df_pro[length(df_pro[,1]),1]
 T_end <- df_pro[1,1]
 x0=0
@@ -122,25 +136,26 @@ x0=0
 simulate_EM <- function(T_start, T_end, dt, params, x0) {
   t <- seq(T_start, T_end, by = dt)
   n<-length(t)-1
-  dW <- rnorm(n)  
+  dW <- rnorm(n)
+  dB <- rpois(n, dt)
   X <- numeric(n + 1)
   X[1] <- x0
-
   
   for (i in 3:(n + 1)) {
     drift_term <- f_drift(X[i-1],params)
-    X[i] <- X[i-1] + drift_term * dt + f_diff(params) * dW[i-1] *sqrt(dt)
+    X[i] <- X[i-1] + drift_term * dt + f_diff(params) * dW[i-1] * sqrt(dt) + f_jump(params) * dB[i-1] * dt
   }
   return(data.frame(t = t, X = X))
 }
 
 sim_res <- simulate_EM(T_start, T_end, dt, result, x0)
 
-plot(sim_res$t, sim_res$X, type = 'l', col = 1)
+plot(sim_res$t, sim_res$X, type = 'l', col = 'red', ylim=ylim)
+lines(df_pro$age, df_pro$d18O, type = 'l', col=1, ylim=ylim)
 
-lines(df_pro$age, df_pro$d18O, type = 'l', col=3)
 
-plot(df_pro$age, df_pro$d18O, type = 'l', col=1)
+plot(df_pro$age, df_pro$d18O, type = 'l', col=1, ylim=ylim)
+lines(sim_res$t, sim_res$X, type = 'l', col = 'red', ylim=ylim)
 
 
 calculate_transition_density <- function(x0, T_start, T_end, dt, params) {
@@ -151,19 +166,14 @@ calculate_transition_density <- function(x0, T_start, T_end, dt, params) {
   density[1] <- x0
   
   for (i in 1:n_steps) {
-    density[i + 1] <- rnorm(1, mean = density[i] + f_drift(density[i], params) * dt, f_diff(params)*sqrt(dt)) 
+    density[i + 1] <- rnorm(1, mean = density[i] + f_drift(density[i], params) *
+                              dt, f_diff(params)*sqrt(dt)) 
   }
   return(density)
 }
 
-plot(density(df_pro[,2]))
-
 transition_densities <- calculate_transition_density(x0,T_start,T_end,dt,result)
-plot(density(transition_densities))
-plot(transition_densities,type='l')
-
-lines(transition_densities, type='l', col=3)
 
 qqnorm(transition_densities)
-
+qqline(transition_densities)
 
