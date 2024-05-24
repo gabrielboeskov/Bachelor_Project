@@ -47,305 +47,276 @@ df_pro <- drop_na(preprocess_data(df))
 # Plotting the data after and before data processing
 ggplot(data = df, aes(x = age, y = d18O)) +
   geom_line() +
-  xlab("Time before present (yrs)") +
+  xlab("Time before present (kyrs)") +
   ylab(expression(deltaˆ18 ~ O ~ (permil)))
 
 ggplot(data = df_pro, aes(x = age, y = d18O)) +
   geom_line() +
-  xlab("Time before present (yrs)") +
-  ylab(expression(deltaˆ18 ~ O ~ (permil)) + 
-         theme_minimal())
+  xlab("Time before present (kyrs)") +
+  ylab(expression(deltaˆ18 ~ O ~ (permil)))
 
 
 # Define the SDE parameters and functions
-f_drift <- function(x, params) {
-  drift <- params[2]*x - params[3]
-  return(drift)
+F_drift <- function(X, beta1,beta2,beta4){
+  return(beta4*X^3 - beta2*X - beta1)
 }
 
-f_diff <- function(params) {
-  diff <- params[4]
-  return(diff)
-}
+plot(seq(-10,10,0.01),F_drift(seq(-10,10,0.01), 0.03,  0.08, -0.06), type='l')
 
-f_jump <- function(x, x_val, params) {
-  jump <- exp((x_val-x) / params[5])
+F_jump <- function(x, x_val, alpha) {
+  jump <- exp((x-x_val)/alpha)
   return(jump)
 }
 
 
 # Parameters
 dt <- 0.05
-x_val <- 1.2
 T_start <- df_pro[length(df_pro[,1]), 1]
 T_end <- df_pro[1, 1]
 x0 <- 0
 num_steps <- (T_end - T_start) / 0.05
 ylim <- c(-6, 6)
-parameters <- c(0.5,-0.5,1,0.55)
-num_paths <- 10
-
-
-# Euler-Maruyama negative log likelihood
-EM_nll <- function(par, X, dt) {
-  N <- length(X) - 1
-  
-  # Initialize negative log likelihood
-  nll <- 0
-  
-  for (n in 1:N) {
-    # Drift function
-    drift <- f_drift(X[n], par)
-    
-    # Diffusion matrix
-    SigmaSigma <- f_diff(par)^2
-
-    # Update negative log likelihood
-    nll <- nll + 0.5 * log(2*pi*SigmaSigma * dt) +
-      0.5 * (X[n + 1] - X[n] - drift * dt) *
-      1/(SigmaSigma * dt) * (X[n + 1] - X[n] - drift * dt)
-  }
-  print(1)
-  return(nll)
-}
 
 # y-axis limits for plotting
-ylim <- c(-6, 6)
-
-# Euler maruyama scheme for optimising values, (0=convergence)
-result_EM_1 <- optim(par = parameters, fn = EM_nll,
-                     X = df_pro[,2], dt = 0.05)
-result_EM_1
-
-result <- result_EM_1$par
-
 T_start <- df_pro[length(df_pro[,1]),1]
 T_end <- df_pro[1,1]
 x0=0
 
-simulate_EM <- function(T_start, T_end, dt, params, x0) {
-  t <- seq(T_start, T_end, by = dt)
-  n<-length(t)-1
-  dW <- rnorm(n)
-  dB <- rpois(n, params[6]*dt)
-  X <- numeric(n + 1)
-  X[1] <- x0
-  dZ <- rnorm(n,params[8],params[7])
-  a <- 0
-  for (i in 3:(n + 1)) {
-    drift_term <- f_drift(X[i-1],params)
-    X[i] <- X[i-1] + drift_term * dt + f_diff(params) * dW[i-1] * sqrt(dt)
-       + f_jump(X[i], x_val, params) * dB[i] * dZ[i]
-  }
-  return(data.frame(t = t, X = X))
-}
-x <- seq(0,50,10)
-
-sim_res <- simulate_EM(T_start, T_end, dt, c(0.901964564, -0.042203700, -0.004701163,  0.550725472, 1,1,1,1), x0)
-plot(sim_res$t, sim_res$X, type = 'l', col = 'red', ylim=ylim)
-
-for (i in x){
-  sim_res <- simulate_EM(T_start, T_end, dt, c(0.901964564, -0.042203700, -0.004701163,  0.550725472,1 ,1,i,1), x0)
-  lines(sim_res$t, sim_res$X, type = 'l', col = 'black', ylim=ylim)
-}
-sim_res <- simulate_EM(T_start, T_end, dt, c(0.901964564, -0.042203700, -0.004701163,  0.550725472, 1,1,1,1), x0)
-
-plot(sim_res$t, sim_res$X, type = 'l', col = 'red', ylim=ylim)
-
-lines(df_pro$age, df_pro$d18O, type = 'l', col=1, ylim=ylim)
-
-
-plot(df_pro$age, df_pro$d18O, type = 'l', col=1, ylim=ylim)
-lines(sim_res$t, sim_res$X, type = 'l', col = 'red', ylim=ylim)
-
-
-
-EM_nll <- function(par, data, dt) {
-  N <- length(data) - 1
-  
+# Euler-Maruyama negative log likelihood
+EM_nll_jump <- function(theta, X, dt) {
+  N <- length(X) - 1
+  beta1<-theta[1]
+  beta2<-theta[2]
+  beta4<-theta[3]
+  sigma<-theta[4]
+  lambda <- theta[5]
+  alpha <- theta[6]
+  x_val <- theta[7]
   # Initialize negative log likelihood
   nll <- 0
   
   for (n in 1:N) {
     # Drift function
-    drift <- f_drift(data[n], par)
+    F <- F_drift(X[n], beta1, beta2, beta4)
+    alpha_1 <- F_jump(X[n],x_val,alpha)
     
     # Diffusion matrix
-    Sigma <- f_diff(par)
+    SigmaSigma <- sigma^2
     
-    jump <- f_jump(data[n], x_val, par)
+    # Update negative log likelihood
     
-    lambda <- par[6]
-    
-    beta <- par[7]
-    
-    alpha <- par[8]
-    
-    pois <- 0
-    for (i in 1:7) {  # Adjust the range based on your model
-      # Probability of observing i jumps in the interval (dt)
-      a <- ((lambda * dt)^(i/jump) / factorial(i/jump) * exp(-lambda * dt)) * 
-        (1/(Sigma^2*dt + i*beta^2))*(exp((-1/2)*((data[n+1]-data[n]-drift*dt-i*alpha)^2/(Sigma^2*dt + i*beta^2)))/sqrt(2*pi))
-      # Update the Poisson process likelihood
-      pois <- pois + a
+    for (i in 1:5){
+      nll <- nll + 0.5 * log(2*pi*SigmaSigma * dt) +
+        0.5 * (X[n + 1] - X[n] - F * dt - alpha_1 * i) *
+        1/(SigmaSigma * dt) * (X[n + 1] - X[n] - F * dt - alpha_1 * i) - log((lambda * dt)^(i)/factorial(i)*exp(-lambda * dt))
     }
-    nll <- nll - log(pois)
   }
   print(nll)
   return(nll)
 }
 
-factorial(1/1000)
-parameters = c(1,1,1,1,1,1,1,1)
-
-result_EM_1 <- optim(par = parameters, fn = EM_nll,
-                     data = df_pro[,2], dt = 0.05, method = "L-BFGS-B")
-
-result_EM_1
-
-simulate_EM <- function(T_start, T_end, dt, params, x0) {
-  t <- seq(T_start, T_end, by = dt)
-  n<-length(t)-1
-  dW <- rnorm(n)
-  dB <- rpois(n, dt)
-  dZ <- rnorm(n,params[8],params[7])
-  X <- numeric(n + 1)
-  X[1] <- x0
-  
-  a <- 0
-  for (i in 2:(n + 1)) {
-    drift_term <- f_drift(X[i-1],params)
-    X[i] <- X[i-1] + drift_term * dt + f_diff(params) * dW[i-1] * sqrt(dt)
-    + f_jump(X[i], x_val, params) * dB[i] * dZ[i]
-  }
-  return(data.frame(t = t, X = X))
-}
+initial_beta_jump <- c(-1,  1, -1,  1,  1,  0.1, 1.7)
+(result_EM_1_jump <- optim(par = initial_beta_jump, 
+                          fn = EM_nll_jump, 
+                          X = df_pro[,2], 
+                          dt = 0.05))
 
 
-a <- simulate_EM(T_start,T_end,dt,result_EM_1$par,x0)
-plot(a,type='l')
+result_jump <- result_EM_1_jump$par
+result_jump <- c(-0.0926526358, -0.0795954453,  0.0000938568,  0.6148263149,  0.0996599412,  0.2282021685)
 
-f_jump(1.5,1.3,c(1,1,1,1,0.2))
-
-
-tmp <- setYuima(data=setData(zoo(df[,2],order.by=df$age), delta=1/20))
-
-yuima_model <- setModel(drift = "theta2*x-theta3",
-                        diffusion = "sigma",
-                        jump.coeff = "exp((1.3-x)/beta)",
-                        measure = list(intensity = "lambda",
-                                       df = list("dnorm(z, alpha, sigma_norm)")),
-                                       measure.type="CP",
-                                       solve.variable = "x")
-
-str(yuima_model)
-
-yuima <- setYuima(data = tmp@data, model=yuima_model)
-str(yuima)
-
-lower <- list(theta2=0.1, theta3=0.1,sigma = 0.1, beta = 0.1, lambda=0.1, alpha=0.1, sigma_norm=0.1)
-upper <- list(theta2=10, theta3=10, sigma = 2, beta = 10, lambda=10, alpha=10, sigma_norm=10)
-start <- list(theta2=0.7, theta3=1.5, sigma = 0.55, beta = 1, lambda=1, alpha=1, sigma_norm=1)
-
+T <- length(df_pro[,2])*0.05
 dt <- 0.05
+x0 <- 0
+iterations <- 100
 
-out <- qmle(yuima, start=start, threshold=sqrt(20), upper=upper, lower=lower, method="L-BFGS-B")
+# 1D EM-simulation of data
+simulate_EM_jump <- function(T, dt, b1, b2, b4, sigma, lambda, alpha, x_val, x0) {
+  t <- seq(0, T, by = dt)
+  n <- length(t) - 1
+  dW <- rnorm(n) * sqrt(dt)  # Correct Wiener increment
+  dN <- rpois(n, lambda * dt)  # Poisson increment
+  X <- numeric(n + 1)
+  X[1] <- x0
+  for (i in 2:(n + 1)) {
+    drift_term <- F_drift(X[i-1], b1, b2, b4)
+    jump_term <- F_jump(X[i-1], x_val, alpha)
 
-warnings()
-
-out
-yuima@model@parameter
-
-
-
-Terminal <- 10 
-samp <- setSampling(T=Terminal,n=1000)
-mod4 <- setPoisson(intensity="beta*(1+sin(lambda*t))", df=list("dconst(z,1)"))
-set.seed(123) 
-lambda <- 3 
-beta <- 5 
-y4 <- simulate(mod4, true.par=list(lambda=lambda,beta=beta),sampling=samp) 
-par(mfrow=c(2,1)) 
-par(mar=c(3,3,1,1)) 
-plot(y4) 
-f <- function(t) beta*(1+sin(lambda*t)) 
-curve(f, 0, Terminal, col="red")
-
-
-
-
-X <- matrix(df_pro[,2])
-M <- 1
-N <- length(X)
-
-dx <- matrix(0, N, M) # create empty matrix for difference of X states
-for (j in 1:M) {
-  dx[, j] <- c(X[, j]) # find difference of X states
-}
-
-f <- matrix(0, N, 10) # create empty matrix for transition density
-estimate <- matrix(0, M, 5)
-dx
-for (v in 1:M) {
-  dif <- dx[, v]
-  likelihood <- function(theta, dif, dt) { # create a function for likelihood
-    Q1 <- theta[1] # symbolize alpha parameter
-    Q2 <- theta[2] # symbolize sigma parameter
-    Q3 <- theta[3] # symbolize mu parameter
-    Q4 <- theta[4] # symbolize sigma_j parameter
-    Q5 <- theta[5] # symbolize lambda parameter
-    
-    for (ii in 1:N) {
-      for (j in 1:10) {
-        f[ii, j] <- (exp(-Q5 * dt) * (Q5 * dt)^(j - 1) / factorial(j - 1)) *
-          (1 / sqrt(2 * pi * (Q2^2 * dt + (j - 1) * Q4^2))) *
-          exp(-((dif[ii] - ((Q1) * dt + (j - 1) * Q3))^2) / (2 * (Q2^2 * dt + (j - 1) * Q4^2)))
-      }
-    }
-    R <- rowSums(f)
-    LL <- -sum(log(R)) # find -log likelihood
-    print(LL)
-    return(LL)
+    X[i] <- X[i-1] + drift_term * dt + sigma * dW[i-1] + dN[i-1] * jump_term
   }
-  
-  ## Minimize -log likelihood function ##
-  estimation <- optim(c(0.5, 2, 0.5, 0.5, 2), likelihood, gr = NULL, dif = dif, dt, method = "L-BFGS-B",
-                      lower = c(-Inf, 0, -Inf, 0, -Inf), upper = c(Inf, Inf, Inf, Inf, Inf), hessian = TRUE)
-  print(estimation)
-  options(scipen = 999)
-  estimate[v, ] <- estimation$par # assign each parameter estimation set to estimate matrix
+  return(data.frame(t = T - t, X = X))  # Adjust time vector for correct plotting
 }
 
-parameter_estimations <- colSums(estimate) / M # give the estimated parameter value for each parameter
-
-parameter_estimations
-estimation
-
-
-
-simulate_EM <- function(T_start, T_end, dt, params, x0) {
-  t <- seq(T_start, T_end, by = dt)
-  n<-length(t)-1
-  dW <- rnorm(n)
-  dB <- rpois(n+1, params[6]*dt)
-  dZ <- rnorm(n)
+simulate_Milstein <- function(T, dt, b1, b2, b4, sigma, lambda, alpha, x_val, x0) {
+  t <- seq(0, T, by = dt)
+  n <- length(t) - 1
+  dW <- rnorm(n) * sqrt(dt)  # Correct Wiener increment
+  dN <- rpois(n, lambda * dt)  # Poisson increment
   X <- numeric(n + 1)
   X[1] <- x0
   
+  # Define the diffusion function
+  diffusion_term <- sigma
+  
+
   for (i in 2:(n + 1)) {
-    drift_term <- f_drift(X[i-1],params)
-    X[i] <- X[i-1] + drift_term * dt + f_diff(params) * dW[i-1] * sqrt(dt)
-    + f_jump(X[i], x_val, params) * (dB[i] * params[7] + sqrt(dB[i]) * params[8] * dZ[i])
+    drift_term <- F_drift(X[i-1], b1, b2, b4)
+    jump_term <- F_jump(X[i-1],x_val, alpha)
+    
+    # Milstein scheme with jump term
+    X[i] <- X[i-1] + drift_term * dt + diffusion_term * dW[i-1] +
+      0.5 * diffusion_term * (dW[i-1]^2 - dt) + dN[i-1] * jump_term
   }
-  return(data.frame(t = t, X = X, B = dB))
+  
+  return(data.frame(t = T - t, X = X))  # Adjust time vector for correct plotting
 }
 
-a <- simulate_EM(T_start,T_end,dt,c(0.901964564, -0.042203700, -0.004701163,  0.550725472,1, 0.4, 0.6, 1),x0)
-plot(a$t, a$X,type='l')
+a <- simulate_EM_jump(T, dt, result_jump[1], result_jump[2],result_jump[3], 
+                 result_jump[4], result_jump[5], result_jump[6], result_jump[7],x0)
+plot(a$t, a$X,type='l', col='red')
+
+a <- simulate_EM_jump(T, dt, result_jump[1], result_jump[2],result_jump[3], 
+                 result_jump[4], result_jump[5], result_jump[6], result_jump[7],x0)
+plot(a$t, a$X,type='l', col='red')
 
 
 
+b <- simulate_Milstein(T, dt, result_jump[1], result_jump[2],result_jump[3], 
+                  result_jump[4], result_jump[5], result_jump[6],x0)
+plot(b$t, b$X,type='l', col='red')
+
+
+lines(df_pro[,1], df_pro[,2], type='l')
+
+
+EM_nll <- function(theta, X, dt) {
+  N <- length(X) - 1
+  beta1<-theta[1]
+  beta2<-theta[2]
+  beta4<-theta[3]
+  sigma<-theta[4]
+  
+  # Initialize negative log likelihood
+  nll <- 0
+  
+  for (n in 1:N) {
+    # Drift function
+    F <- F_drift(X[n], beta1, beta2, beta4)
+    
+    # Diffusion matrix
+    SigmaSigma <- sigma^2
+    
+    # Update negative log likelihood
+    nll <- nll + 0.5 * log(SigmaSigma * dt) +
+      0.5 * (X[n + 1] - X[n] - F * dt) *
+      1/(SigmaSigma * dt) * (X[n + 1] - X[n] - F * dt)
+  }
+  return(nll)
+}
+
+initial_beta <- c(0.5,0.5,0.5,0.5)
+(result_EM_1 <- optim(par = initial_beta, fn = EM_nll,
+                     X = df_pro[,2], dt = 0.05))
+result <- result_EM_1$par
+
+simulate_EM <- function(T, dt, b1, b2, b4, sigma, x0) {
+  t <- seq(0, T, by = dt)
+  n<-length(t)-1
+  dW <- rnorm(n)  
+  X <- numeric(n + 1)
+  X[1] <- x0
+  for (i in 2:(n + 1)) {
+    drift_term <- F_drift(X[i-1], b1, b2, b4)
+    X[i] <- X[i-1] + drift_term * dt + sigma * dW[i-1] * sqrt(dt)
+  }
+  return(data.frame(t = T-t, X = X))
+}
+
+result_eul_11d <- simulate_EM(800, dt, result[1], result[2], 
+                              result[3],result[4], x0)
+
+result_eul_11d$X
+
+plot(result_eul_11d, type = 'l', col='red')
+
+plot(df_pro[,1], df_pro[,2], type='l')
+
+
+boot_params <- function(iter, init_params, mult){
+  boot_res <- matrix(0, iter, length(init_params)+1)
+  boot_res[1,] <- c(init_params,0)
+  
+  for (i in 2:iter){
+    data <- simulate_EM(800, dt/mult, boot_res[1,1], boot_res[1,2], 
+                         boot_res[1,3],boot_res[1,4], x0)
+
+    optim_data <- data[seq(1, nrow(data), 10), ]
+
+    res <- optim(par = boot_res[1,1:4], fn = EM_nll,
+                 X = optim_data$X, dt = 0.05)
+    
+    boot_res[i,] <- c(res$par, res$convergence)
+  }
+  return(boot_res)
+}
+
+Boot <- boot_params(100, result, 10)
+Boot
+
+boot_params_jump <- function(iter, init_params, mult){
+  boot_res <- matrix(0, iter, length(init_params)+1)
+  boot_res[1,] <- c(init_params,0)
+  
+  for (i in 2:iter){
+    data <- simulate_EM_jump(800, dt/mult, boot_res[1,1], boot_res[1,2], 
+                        boot_res[1,3],boot_res[1,4],
+                        boot_res[1,5],boot_res[1,6],
+                        boot_res[1,7], x0)
+    
+    optim_data <- data[seq(1, nrow(data), 10), ]
+    
+    res <- optim(par = boot_res[1,1:7], fn = EM_nll,
+                 X = optim_data$X, dt = 0.05)
+
+    boot_res[i,] <- c(res$par, res$convergence)
+  }
+  return(boot_res)
+}
 
 
 
+Boot_jump <- boot_params_jump(100, result_jump, 10)
+Boot_jump
+plot(Boot[,5])
 
+quantile(Boot_jump[,2], c(0.025, 0.975))
+quant_jump <- matrix(0,2,7)
+for (i in 1:7){
+  quant_jump[,i] <- quantile(Boot_jump[,i], c(0.025, 0.975))
+}
+
+quantile(Boot[,2], c(0.025, 0.975))
+quant <- matrix(0,2,4)
+for (i in 1:4){
+  quant[,i] <- quantile(Boot[,i], c(0.025, 0.975))
+}
+
+quant_jump
+names(data.frame(quant))
+
+ggplot(data = data.frame(quant), aes(x = forcats::fct_inorder(Variable))) +
+  geom_point( aes(x = forcats::fct_inorder(Variable), y = Optimal), shape = 16, color = "green") +
+  geom_errorbar(aes(ymin=Lower, ymax=Upper), colour="black", width=.1, ) +
+  geom_point( aes(x = forcats::fct_inorder(Variable), y = Mean), shape = 16, color = "black") +
+  labs(x = "Variable", y = "Estimated value") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) +
+  theme(panel.margin = unit(1, "lines")) +  # Adjust panel margin to prevent clipping
+  theme(axis.ticks.x = element_blank())  # Remove x-axis ticks
+
+
+
+a <- c()
+for (i in 1:1000){
+  a[i] <- sum(rpois(15237,0.0996599412*dt))
+}
+plot(density(a))
