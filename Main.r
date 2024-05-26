@@ -3,7 +3,6 @@
 
 rm(list = ls())
 
-library(yuima)
 library(ggplot2)
 library(dplyr)
 library(tidyr)
@@ -64,10 +63,10 @@ F_drift <- function(X, beta1,beta2,beta4){
 plot(seq(-10,10,0.01),F_drift(seq(-10,10,0.01), 0.03,  0.08, -0.06), type='l')
 
 F_jump <- function(x, x_val, alpha) {
-  jump <- exp((x-x_val)/alpha)
+  jump <- exp((x_val-x)/alpha)
   return(jump)
 }
-
+F_jump(10,60,6)
 
 # Parameters
 dt <- 0.05
@@ -106,24 +105,38 @@ EM_nll_jump <- function(theta, X, dt) {
     # Update negative log likelihood
     
     for (i in 1:5){
-      nll <- nll + 0.5 * log(2*pi*SigmaSigma * dt) +
+      nll <- nll + 0.5 * log(2 * pi * SigmaSigma * dt) +
         0.5 * (X[n + 1] - X[n] - F * dt - alpha_1 * i) *
-        1/(SigmaSigma * dt) * (X[n + 1] - X[n] - F * dt - alpha_1 * i) - log((lambda * dt)^(i)/factorial(i)*exp(-lambda * dt))
+        1/(SigmaSigma * dt) * (X[n + 1] - X[n] - F * dt - alpha_1 * i) - 
+        log((lambda * dt)^(i)/factorial(i)*exp(-lambda * dt))
     }
   }
   print(nll)
   return(nll)
 }
 
-initial_beta_jump <- c(-1,  1, -1,  1,  1,  0.1, 1.7)
+initial_beta_jump <- c(1.3923928,  0.8729769,  0.2534815,  1.2725069,  
+                       1,  0.8243576, -1)
 (result_EM_1_jump <- optim(par = initial_beta_jump, 
                           fn = EM_nll_jump, 
                           X = df_pro[,2], 
-                          dt = 0.05))
+                          dt = 0.05,
+                          control=list(maxit=1000)))
 
+result_EM_1_jump <- optim(par = initial_beta_jump, 
+                          fn = EM_nll_jump, 
+                          X = df_pro[,2], 
+                          dt = 0.05,
+                          control=list(maxit=1000),
+                          method='L-BFGS-B',
+                          lower=c(-5,-5,-5,0.0001,0.0001,-5,-5,-5),
+                          upper=c(5,5,5,5,5,5,5,5))
+
+#method='L-BFSG-B',
+#lower=c(-5,-5,-5,0.0001,0.0001,-5,-5,-5),
+#upper=c(5,5,5,5,5,5,5,5)
 
 result_jump <- result_EM_1_jump$par
-result_jump <- c(-0.0926526358, -0.0795954453,  0.0000938568,  0.6148263149,  0.0996599412,  0.2282021685)
 
 T <- length(df_pro[,2])*0.05
 dt <- 0.05
@@ -141,9 +154,11 @@ simulate_EM_jump <- function(T, dt, b1, b2, b4, sigma, lambda, alpha, x_val, x0)
   for (i in 2:(n + 1)) {
     drift_term <- F_drift(X[i-1], b1, b2, b4)
     jump_term <- F_jump(X[i-1], x_val, alpha)
-
+    
     X[i] <- X[i-1] + drift_term * dt + sigma * dW[i-1] + dN[i-1] * jump_term
+
   }
+  print(dN)
   return(data.frame(t = T - t, X = X))  # Adjust time vector for correct plotting
 }
 
@@ -174,19 +189,15 @@ simulate_Milstein <- function(T, dt, b1, b2, b4, sigma, lambda, alpha, x_val, x0
 a <- simulate_EM_jump(T, dt, result_jump[1], result_jump[2],result_jump[3], 
                  result_jump[4], result_jump[5], result_jump[6], result_jump[7],x0)
 plot(a$t, a$X,type='l', col='red')
-
-a <- simulate_EM_jump(T, dt, result_jump[1], result_jump[2],result_jump[3], 
-                 result_jump[4], result_jump[5], result_jump[6], result_jump[7],x0)
-plot(a$t, a$X,type='l', col='red')
-
-
+a
 
 b <- simulate_Milstein(T, dt, result_jump[1], result_jump[2],result_jump[3], 
-                  result_jump[4], result_jump[5], result_jump[6],x0)
+                  result_jump[4], result_jump[5], result_jump[6], result_jump[7]
+                  ,x0)
 plot(b$t, b$X,type='l', col='red')
 
 
-lines(df_pro[,1], df_pro[,2], type='l')
+plot(df_pro[,1], df_pro[,2], type='l')
 
 
 EM_nll <- function(theta, X, dt) {
@@ -232,8 +243,10 @@ simulate_EM <- function(T, dt, b1, b2, b4, sigma, x0) {
   return(data.frame(t = T-t, X = X))
 }
 
-result_eul_11d <- simulate_EM(800, dt, result[1], result[2], 
+result_eul_11d <- simulate_EM(800, dt/10, result[1], result[2], 
                               result[3],result[4], x0)
+result_eul_11d <- [seq(1, nrow(result_eul_11d), 10), ]
+
 
 result_eul_11d$X
 
