@@ -47,7 +47,8 @@ df_pro <- drop_na(preprocess_data(df))
 ggplot(data = df, aes(x = age, y = d18O)) +
   geom_line() +
   xlab("Time before present (kyrs)") +
-  ylab(expression(deltaˆ18 ~ O ~ (permil)))
+  ylab(expression(delta^{18} * O ~ (permil)))
+
 
 ggplot(data = df_pro, aes(x = age, y = d18O)) +
   geom_line() +
@@ -63,10 +64,9 @@ F_drift <- function(X, beta1,beta2,beta4){
 plot(seq(-10,10,0.01),F_drift(seq(-10,10,0.01), 0.03,  0.08, -0.06), type='l')
 
 F_jump <- function(x, x_val, alpha) {
-  jump <- exp((x_val-x)/alpha)
+  jump <- 1 + exp((x_val-x)/alpha)
   return(jump)
 }
-F_jump(10,60,6)
 
 # Parameters
 dt <- 0.05
@@ -104,39 +104,41 @@ EM_nll_jump <- function(theta, X, dt) {
     
     # Update negative log likelihood
     
-    for (i in 1:5){
+    for (i in 1:10){
       nll <- nll + 0.5 * log(2 * pi * SigmaSigma * dt) +
         0.5 * (X[n + 1] - X[n] - F * dt - alpha_1 * i) *
         1/(SigmaSigma * dt) * (X[n + 1] - X[n] - F * dt - alpha_1 * i) - 
         log((lambda * dt)^(i)/factorial(i)*exp(-lambda * dt))
     }
   }
-  print(nll)
   return(nll)
 }
 
-initial_beta_jump <- c(1.3923928,  0.8729769,  0.2534815,  1.2725069,  
-                       1,  0.8243576, -1)
-(result_EM_1_jump <- optim(par = initial_beta_jump, 
-                          fn = EM_nll_jump, 
-                          X = df_pro[,2], 
-                          dt = 0.05,
-                          control=list(maxit=1000)))
+#                            β1,             β2,         β3,          σ,      λ    γ,   x∗
+initial_beta_jump_bfsg <- c(-0.00447839, 0.03581118, -0.00069272, 0.55070983, 0.1, 0.1, 0.1)
 
-result_EM_1_jump <- optim(par = initial_beta_jump, 
+result_EM_1_jump_bfsg <- optim(par = initial_beta_jump_bfsg, 
                           fn = EM_nll_jump, 
                           X = df_pro[,2], 
                           dt = 0.05,
                           control=list(maxit=1000),
                           method='L-BFGS-B',
-                          lower=c(-5,-5,-5,0.0001,0.0001,-5,-5,-5),
-                          upper=c(5,5,5,5,5,5,5,5))
+                          lower=c(-5,-5,-5,0.0001,0.0001,-5,-5),
+                          upper=c(5,5,5,5,5,5,5))
 
-#method='L-BFSG-B',
-#lower=c(-5,-5,-5,0.0001,0.0001,-5,-5,-5),
-#upper=c(5,5,5,5,5,5,5,5)
+
+
+?optim
+initial_beta_jump <- result_EM_1_jump_bfsg$par
+(result_EM_1_jump <- optim(par = initial_beta_jump_bfsg, 
+                          fn = EM_nll_jump, 
+                          X = df_pro[,2], 
+                          dt = 0.05,
+                          control=list(maxit=1000)))
 
 result_jump <- result_EM_1_jump$par
+result_jump <- c(-0.01073449,  0.04937238,  0.02828193, 0.63363157, 
+                 0.04917792,  0.18292174,  0.03550532)
 
 T <- length(df_pro[,2])*0.05
 dt <- 0.05
@@ -151,14 +153,13 @@ simulate_EM_jump <- function(T, dt, b1, b2, b4, sigma, lambda, alpha, x_val, x0)
   dN <- rpois(n, lambda * dt)  # Poisson increment
   X <- numeric(n + 1)
   X[1] <- x0
+  jump <- 0
   for (i in 2:(n + 1)) {
     drift_term <- F_drift(X[i-1], b1, b2, b4)
     jump_term <- F_jump(X[i-1], x_val, alpha)
-    
+    jump <- jump + jump_term
     X[i] <- X[i-1] + drift_term * dt + sigma * dW[i-1] + dN[i-1] * jump_term
-
   }
-  print(dN)
   return(data.frame(t = T - t, X = X))  # Adjust time vector for correct plotting
 }
 
@@ -186,10 +187,12 @@ simulate_Milstein <- function(T, dt, b1, b2, b4, sigma, lambda, alpha, x_val, x0
   return(data.frame(t = T - t, X = X))  # Adjust time vector for correct plotting
 }
 
-a <- simulate_EM_jump(T, dt, result_jump[1], result_jump[2],result_jump[3], 
+a <- simulate_EM_jump(T, dt/10, result_jump[1], result_jump[2],result_jump[3], 
                  result_jump[4], result_jump[5], result_jump[6], result_jump[7],x0)
-plot(a$t, a$X,type='l', col='red')
-a
+
+plot(a[seq(1, nrow(a), 10), ]$t, a[seq(1, nrow(a), 10), ]$X,type='l', col='red',
+     xlab = "Time before present (kyrs)",ylab = expression(deltaˆ18 ~ O ~ (permil)))
+
 
 b <- simulate_Milstein(T, dt, result_jump[1], result_jump[2],result_jump[3], 
                   result_jump[4], result_jump[5], result_jump[6], result_jump[7]
@@ -225,7 +228,7 @@ EM_nll <- function(theta, X, dt) {
   return(nll)
 }
 
-initial_beta <- c(0.5,0.5,0.5,0.5)
+initial_beta <- c(1,1,1,1)
 (result_EM_1 <- optim(par = initial_beta, fn = EM_nll,
                      X = df_pro[,2], dt = 0.05))
 result <- result_EM_1$par
@@ -243,16 +246,35 @@ simulate_EM <- function(T, dt, b1, b2, b4, sigma, x0) {
   return(data.frame(t = T-t, X = X))
 }
 
-result_eul_11d <- simulate_EM(800, dt/10, result[1], result[2], 
+step <- simulate_EM(800, dt/10, result[1], result[2], 
                               result[3],result[4], x0)
-result_eul_11d <- [seq(1, nrow(result_eul_11d), 10), ]
+
+result_eul_11d <- step[seq(1, nrow(step), 10), ]
+
+plot(df_pro[,1],df_pro[,2], type='l', col='black')
+lines(result_eul_11d, type='l', col='darkblue')
+
+plot(result_eul_11d, type='l', col='darkblue',
+     xlab = "Time before present (kyrs)",ylab = expression(deltaˆ18 ~ O ~ (permil)))
+
+plot(density(df_pro[,2]), col='darkred', main="", xlab=expression(deltaˆ18 ~ O ~ (permil)))
+lines(density(a[seq(1, nrow(a), 10), ]$X), main="")
+
+plot(density(result_eul_11d[1:length(df_pro[,2]),2]),main="", xlab=expression(deltaˆ18 ~ O ~ (permil)))
+lines(density(df_pro[,2]), col='darkred')
 
 
-result_eul_11d$X
 
-plot(result_eul_11d, type = 'l', col='red')
+qqplot(a[seq(1, nrow(a), 10), ]$X,df_pro[,2], xlab = "Simulated data", ylab = "observed data")
 
-plot(df_pro[,1], df_pro[,2], type='l')
+abline(lm(sort(df_pro[,2]) ~ sort(a[seq(0, nrow(a), 10), ]$X)), col = "darkred")
+
+
+qqplot(result_eul_11d[1:length(df_pro[,2]),2],df_pro[,2], 
+       xlab = "Simulated data", ylab = "observed data")
+
+abline(lm(sort(df_pro[,2]) ~ sort(result_eul_11d[1:length(df_pro[,2]),2])), col = "darkred")
+
 
 
 boot_params <- function(iter, init_params, mult){
@@ -274,7 +296,6 @@ boot_params <- function(iter, init_params, mult){
 }
 
 Boot <- boot_params(100, result, 10)
-Boot
 
 boot_params_jump <- function(iter, init_params, mult){
   boot_res <- matrix(0, iter, length(init_params)+1)
@@ -288,7 +309,7 @@ boot_params_jump <- function(iter, init_params, mult){
     
     optim_data <- data[seq(1, nrow(data), 10), ]
     
-    res <- optim(par = boot_res[1,1:7], fn = EM_nll,
+    res <- optim(par = boot_res[1,1:7], fn = EM_nll_jump,
                  X = optim_data$X, dt = 0.05)
 
     boot_res[i,] <- c(res$par, res$convergence)
@@ -298,15 +319,59 @@ boot_params_jump <- function(iter, init_params, mult){
 
 
 
+trans_dens_jump <- function(X,dt,theta){
+  n <- length(X)-1
+  beta1<-theta[1]
+  beta2<-theta[2]
+  beta4<-theta[3]
+  sigma<-theta[4]
+  lambda <- theta[5]
+  alpha <- theta[6]
+  x_val <- theta[7]
+  
+  drifts <- F_drift(X, beta1,beta2,beta4)
+  dif <- sigma^2*dt
+  jumps <- F_jump(X, x_val, alpha)
+  
+  trans <- numeric(n)
+  for (i in 2:(n+1)){
+    jumps_track <- 0
+    for (j in 1:10){
+      jumps_track <- jumps_track + ((1/(sqrt(2*pi*dif)))*
+                                      exp(-(1/2)*(X[i]-X[i-1]-drifts[i-1]*dt-jumps[i-1]*j)^2/(dif)) * 
+                                      (((lambda * dt)^j/factorial(j))*exp(-lambda*dt)))
+    }
+    trans[i-1] <- jumps_track
+  }
+  return(trans)
+}
+
+result_jump
+
+plot(seq(-20,20,0.01), F_drift(seq(-20,20,0.01), result_jump[1],result_jump[2],result_jump[3]))
+
+a <- simulate_EM_jump(T, dt/10, 0.003, 0.05,-0.005, 
+                      0.1, 1, 2, 1,x0)
+
+plot(a[seq(1, nrow(a), 10), ]$t, a[seq(1, nrow(a), 10), ]$X,type='l', col='red',
+     xlab = "Time before present (kyrs)",ylab = expression(deltaˆ18 ~ O ~ (permil)))
+
+
+trans_dens <- trans_dens_jump(df_pro[,2], dt, result_jump)
+plot(density(trans_dens))
+
 Boot_jump <- boot_params_jump(100, result_jump, 10)
 Boot_jump
-plot(Boot[,5])
 
 quantile(Boot_jump[,2], c(0.025, 0.975))
 quant_jump <- matrix(0,2,7)
 for (i in 1:7){
   quant_jump[,i] <- quantile(Boot_jump[,i], c(0.025, 0.975))
 }
+
+quant_jump
+
+plot(density(Boot_jump[,7]))
 
 quantile(Boot[,2], c(0.025, 0.975))
 quant <- matrix(0,2,4)
@@ -316,6 +381,20 @@ for (i in 1:4){
 
 quant_jump
 names(data.frame(quant))
+
+par(mfrow=c(2,4))
+
+
+plot(density(Boot_jump[,1]), main='beta1')
+plot(density(Boot_jump[,2]), main='beta2')
+plot(density(Boot_jump[,3]), main='beta3')
+plot(density(Boot_jump[,4]), main='sigma')
+plot(density(Boot_jump[,5]), main='lambda')
+plot(density(Boot_jump[,6]), main='gamma')
+plot(density(Boot_jump[,7]), main='x*')
+
+
+#Plot af boot data
 
 ggplot(data = data.frame(quant), aes(x = forcats::fct_inorder(Variable))) +
   geom_point( aes(x = forcats::fct_inorder(Variable), y = Optimal), shape = 16, color = "green") +
@@ -330,6 +409,8 @@ ggplot(data = data.frame(quant), aes(x = forcats::fct_inorder(Variable))) +
 
 a <- c()
 for (i in 1:1000){
-  a[i] <- sum(rpois(15237,0.0996599412*dt))
+  a[i] <- sum(rpois(15237,60*dt))
 }
+
+1-sum(dpois(0:10,60*0.05))
 plot(density(a))
