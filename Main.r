@@ -1,4 +1,4 @@
-<<<<<<< HEAD
+
 # Filepath <- 
 # setwd(Filepath)
 
@@ -346,7 +346,7 @@ for (i in 1:1000){
   a[i] <- sum(rpois(15237,0.0996599412*dt))
 }
 plot(density(a))
-=======
+
 rm(list = ls())
 
 library(ggplot2)
@@ -464,7 +464,7 @@ EM_nll_jump <- function(theta, X, dt) {
 
 # optimizing algorithm for finding MLE parameters
 #                            beta1,        beta2,       beta3,      sigma, lambda,gamma, x∗
-initial_beta_jump_bfsg <- c(−0.00447839, 0.03581118, −0.00069272, 0.55070983, 1, 2, 1.8)
+initial_beta_jump_bfsg <- c(-0.00447839, 0.03581118, -0.00069272, 0.55070983, 1, 2, 1.8)
 
 result_EM_1_jump_bfsg <- optim(par = initial_beta_jump_bfsg, 
                                fn = EM_nll_jump, 
